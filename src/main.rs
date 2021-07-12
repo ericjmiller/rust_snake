@@ -52,12 +52,14 @@ fn main() {
                 .with_system(food_spawner.system()),
         )
         .add_event::<GrowthEvent>()
+        .add_event::<GameOverEvent>()
         .add_system_set_to_stage(
             CoreStage::PostUpdate,
             SystemSet::new()
                 .with_system(position_translation.system())
                 .with_system(size_scaling.system()),
         )
+        .add_system(game_over.system().after(SnakeMovement::Movement))
         .add_plugins(DefaultPlugins)
         .run();
 }
@@ -112,6 +114,8 @@ struct Materials {
 }
 
 struct Food;
+
+struct GameOverEvent;
 
 #[derive(PartialEq, Copy, Clone)]
 enum Direction {
@@ -222,6 +226,7 @@ fn snake_movement(
     mut last_tail_position: ResMut<LastTailPosition>,
     mut heads: Query<(Entity, &SnakeHead)>,
     mut positions: Query<&mut Position>,
+    mut game_over_writer: EventWriter<GameOverEvent>,
 ) {
     if let Some((head_entity, head)) = heads.iter_mut().next() {
         let segment_positions = segments
@@ -244,12 +249,26 @@ fn snake_movement(
                 head_pos.y -= 1;
             }
         };
+
+        if head_pos.x < 0 
+            || head_pos.y < 0
+            || head_pos.x as u32 >= ARENA_WIDTH
+            || head_pos.y as u32 >= ARENA_HEIGHT
+        {
+            game_over_writer.send(GameOverEvent);
+        }
+
+        if segment_positions.contains(&head_pos) {
+            game_over_writer.send(GameOverEvent);
+        }
+        
         segment_positions
             .iter()
             .zip(segments.0.iter().skip(1))
             .for_each(|(pos, segment)| {
                 *positions.get_mut(*segment).unwrap() = *pos;
             });
+
         last_tail_position.0 = Some(*segment_positions.last().unwrap());
     }
 }
@@ -311,6 +330,18 @@ fn snake_growth(
     }
 }
 
-
-
-
+fn game_over(
+    mut commands: Commands,
+    mut reader: EventReader<GameOverEvent>,
+    materials: Res<Materials>,
+    segments_res: ResMut<SnakeSegment>,
+    food: Query<Entity, With<Food>>,
+    segments: Query<Entity, With<SnakeSegment>>,
+) {
+    if reader.iter().next().is_some() {
+        for ent in food.iter().chain(segments.iter()) {
+            commands.entity(ent).despawn();
+        }
+        spawn_snake(commands, materials, segments_res);
+    }
+}
