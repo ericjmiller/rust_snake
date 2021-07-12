@@ -17,8 +17,11 @@ fn main() {
             ..Default::default()
         })
         .insert_resource(ClearColor(Color::rgb(0.04, 0.04, 0.04)))
+        .insert_resource(SnakeSegment::default())
         .add_startup_system(setup.system())
-        .add_startup_stage("game_setup", SystemStage::single(spawn_snake.system()))
+        .add_startup_stage(
+            "game_setup", 
+            SystemStage::single(spawn_snake.system()))
         .add_system(
             snake_movement_input
                 .system()
@@ -50,6 +53,7 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
     commands.insert_resource(
         Materials {
             head_material: materials.add(Color::rgb(0.7, 0.7, 0.7).into()),
+            segment_material: materials.add(Color::rgb(0.3, 0.3, 0.3).into()),
             food_material: materials.add(Color::rgb(1.0, 0.0, 1.0).into()),
         },
     );
@@ -79,8 +83,12 @@ struct SnakeHead {
     direction: Direction,
 }
 
+#[derive(Default)]
+struct SnakeSegment(Vec<Entity>);
+
 struct Materials {
     head_material: Handle<ColorMaterial>,
+    segment_material: Handle<ColorMaterial>,
     food_material: Handle<ColorMaterial>,
 }
 
@@ -113,9 +121,13 @@ pub enum SnakeMovement {
     Growth,
 }
 
-fn spawn_snake(mut commands: Commands, materials: Res<Materials>) {
-    commands
-        .spawn_bundle(SpriteBundle {
+fn spawn_snake(
+    mut commands: Commands, 
+    materials: Res<Materials>,
+    mut segments: ResMut<SnakeSegment>,
+) {
+    segments.0 = vec![
+        commands.spawn_bundle(SpriteBundle {
             material: materials.head_material.clone(),
             sprite: Sprite::new(Vec2::new(10.0, 10.0)),
             ..Default::default()
@@ -123,8 +135,48 @@ fn spawn_snake(mut commands: Commands, materials: Res<Materials>) {
         .insert(SnakeHead{
             direction: Direction::Up,
         })
+        .insert(SnakeSegment)
         .insert(Position { x: 3, y: 3 })
-        .insert(Size::square(0.8));
+        .insert(Size::square(0.8))
+        .id(),
+        spawn_segment(
+            commands,
+            &materials.segment_material,
+            Position { x: 3, y: 2 }
+        ),
+    ];
+}
+
+fn spawn_segment(
+    mut commands: Commands,
+    material: &Handle<ColorMaterial>,
+    position: Position,
+) -> Entity {
+    commands.spawn_bundle(SpriteBundle {
+        material: material.clone(),
+        ..Default::default()
+    })
+    .insert(SnakeSegment)
+    .insert(position)
+    .insert(Size::square(0.65))
+    .id()
+}
+
+fn food_spawner(
+    mut commands: Commands,
+    materials: Res<Materials>
+) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            material: materials.food_material.clone(),
+            ..Default::default()
+        })
+    .insert(Food)
+    .insert(Position {
+        x: (random::<f32>() * ARENA_WIDTH as f32) as i32,
+        y: (random::<f32>() * ARENA_HEIGHT as f32) as i32,
+    })
+    .insert(Size::square(0.8));
 }
 
 fn snake_movement_input(keyboard_input: Res<Input<KeyCode>>, mut heads: Query<&mut SnakeHead>) {
@@ -146,8 +198,18 @@ fn snake_movement_input(keyboard_input: Res<Input<KeyCode>>, mut heads: Query<&m
     }
 }
 
-fn snake_movement(mut heads: Query<(&mut Position, &SnakeHead)>) {
-    if let Some((mut head_pos, head)) = heads.iter_mut().next() {
+fn snake_movement(
+    segments: ResMut<SnakeSegment>,
+    mut heads: Query<(Entity, &SnakeHead)>,
+    mut positions: Query<&mut Position>,
+) {
+    if let Some((head_entity, head)) = heads.iter_mut().next() {
+        let segment_positions = segments
+            .0
+            .iter()
+            .map(|e| *positions.get_mut(*e).unwrap())
+            .collect::<Vec<Position>>();
+        let mut head_pos = positions.get_mut(head_entity).unwrap();
         match &head.direction {
             Direction::Left => {
                 head_pos.x -= 1;
@@ -162,6 +224,12 @@ fn snake_movement(mut heads: Query<(&mut Position, &SnakeHead)>) {
                 head_pos.y -= 1;
             }
         };
+        segment_positions
+            .iter()
+            .zip(segments.0.iter().skip(1))
+            .for_each(|(pos, segment)| {
+                *positions.get_mut(*segment).unwrap() = *pos;
+            });
     }
 }
 
@@ -190,22 +258,6 @@ fn position_translation(windows: Res<Windows>, mut q: Query<(&Position, &mut Tra
     }
 }
 
-fn food_spawner(
-    mut commands: Commands,
-    materials: Res<Materials>
-) {
-    commands
-        .spawn_bundle(SpriteBundle {
-            material: materials.food_material.clone(),
-            ..Default::default()
-        })
-    .insert(Food)
-    .insert(Position {
-        x: (random::<f32>() * ARENA_WIDTH as f32) as i32,
-        y: (random::<f32>() * ARENA_HEIGHT as f32) as i32,
-    })
-    .insert(Size::square(0.8));
-}
 
 
 
