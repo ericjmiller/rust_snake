@@ -18,6 +18,7 @@ fn main() {
         })
         .insert_resource(ClearColor(Color::rgb(0.04, 0.04, 0.04)))
         .insert_resource(SnakeSegment::default())
+        .insert_resource(LastTailPosition::default())
         .add_startup_system(setup.system())
         .add_startup_stage(
             "game_setup", 
@@ -37,6 +38,12 @@ fn main() {
                         .system()
                         .label(SnakeMovement::Eating)
                         .after(SnakeMovement::Movement),
+                )
+                .with_system(
+                    snake_growth
+                        .system()
+                        .label(SnakeMovement::Growth)
+                        .after(SnakeMovement::Eating),
                 )
         )
         .add_system_set(
@@ -92,6 +99,9 @@ struct SnakeHead {
 
 #[derive(Default)]
 struct SnakeSegment(Vec<Entity>);
+
+#[derive(Default)]
+struct LastTailPosition(Option<Position>);
 
 struct GrowthEvent;
 
@@ -209,6 +219,7 @@ fn snake_movement_input(keyboard_input: Res<Input<KeyCode>>, mut heads: Query<&m
 
 fn snake_movement(
     segments: ResMut<SnakeSegment>,
+    mut last_tail_position: ResMut<LastTailPosition>,
     mut heads: Query<(Entity, &SnakeHead)>,
     mut positions: Query<&mut Position>,
 ) {
@@ -239,6 +250,7 @@ fn snake_movement(
             .for_each(|(pos, segment)| {
                 *positions.get_mut(*segment).unwrap() = *pos;
             });
+        last_tail_position.0 = Some(*segment_positions.last().unwrap());
     }
 }
 
@@ -283,6 +295,21 @@ fn snake_eating(
     }
 }
 
+fn snake_growth(
+    commands: Commands,
+    last_tail_position: Res<LastTailPosition>,
+    mut segments: ResMut<SnakeSegment>,
+    mut growth_reader: EventReader<GrowthEvent>,
+    materials: Res<Materials>,
+) {
+    if growth_reader.iter().next().is_some() {
+        segments.0.push(spawn_segment(
+            commands,
+            &materials.segment_material,
+            last_tail_position.0.unwrap(),
+        ));
+    }
+}
 
 
 
