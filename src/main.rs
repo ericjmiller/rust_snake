@@ -31,13 +31,20 @@ fn main() {
         .add_system_set(
             SystemSet::new()
                 .with_run_criteria(FixedTimestep::step(0.150))
-                .with_system(snake_movement.system().label(SnakeMovement::Movement)),
+                .with_system(snake_movement.system().label(SnakeMovement::Movement))
+                .with_system(
+                    snake_eating
+                        .system()
+                        .label(SnakeMovement::Eating)
+                        .after(SnakeMovement::Movement),
+                )
         )
         .add_system_set(
             SystemSet::new()
                 .with_run_criteria(FixedTimestep::step(1.0))
                 .with_system(food_spawner.system()),
         )
+        .add_event::<GrowthEvent>()
         .add_system_set_to_stage(
             CoreStage::PostUpdate,
             SystemSet::new()
@@ -85,6 +92,8 @@ struct SnakeHead {
 
 #[derive(Default)]
 struct SnakeSegment(Vec<Entity>);
+
+struct GrowthEvent;
 
 struct Materials {
     head_material: Handle<ColorMaterial>,
@@ -258,7 +267,21 @@ fn position_translation(windows: Res<Windows>, mut q: Query<(&Position, &mut Tra
     }
 }
 
-
+fn snake_eating(
+    mut commands: Commands,
+    mut growth_writer: EventWriter<GrowthEvent>,
+    food_positions: Query<(Entity, &Position), With<Food>>,
+    head_positions: Query<&Position, With<SnakeHead>>,
+) {
+    for head_pos in head_positions.iter() {
+        for (ent, food_pos) in food_positions.iter() {
+            if food_pos == head_pos {
+                commands.entity(ent).despawn();
+                growth_writer.send(GrowthEvent)
+            }
+        }
+    }
+}
 
 
 
